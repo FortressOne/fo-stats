@@ -1,7 +1,7 @@
 ###
 # 14/11/2021 22:30
-# PS  COMMAND LINE:- & .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly] [-OpenHTML]
-# WIN COMMAND LINE:- powershell -Command "& .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly] [-OpenHTML]"
+# PS  COMMAND LINE:- & .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly]
+# WIN COMMAND LINE:- powershell -Command "& .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly]"
 #
 # NOTE: StatFile parameter now accepts *.json wildcard to generate many HTMLs, the Text stats are ALL STATS COMBINED.
 #
@@ -242,10 +242,10 @@ function arrClass-UpdatePlayer {
         Eng  = 0
         SG   = 0
       }
+      $playerpos = $table.Value.Length
       $table.Value += $obj
-    }
-
-    if ($playerpos -gt -1 -and $value -gt 0) { ($table.Value)[$playerpos].$class += $value }
+    } 
+    $table.Value[$playerpos].$class += $value
   }
 }
 #end Summary table functions
@@ -461,7 +461,7 @@ foreach ($jsonFile in $inputFile) {
   $script:round = 1
   $script:timeBlock = 1
   $prevItem = ''
-  
+
   ForEach ($item in $json) {
     $type    = $item.type
     $kind    = $item.kind
@@ -1783,10 +1783,10 @@ foreach ($jsonFile in $inputFile) {
       foreach ($i in $ClassAllowed) {
         $key = "$($p)_$($i)"
         $time = [int]$arrTimeClassRnd1.$key
-        $class = $ClassToStr[$i]
+        $class = [string]($ClassToStr[$i])
 
         if ($time -gt 0) {
-          arrClass-UpdatePlayer -table $refClass -player $p -class $class -value $time
+          arrClass-UpdatePlayer -table $refClass -player $p -class $class -value ([int]$time)
           arrSummaryTable-SetPlayerProperty -table $refSummary -player $p -property 'TimePlayed' -value ([int]$time)
         }
       }
@@ -1806,7 +1806,7 @@ foreach ($jsonFile in $inputFile) {
         $class = $ClassToStr[$i]
 
         if ($time -gt 0) {
-          arrClass-UpdatePlayer             -table $refClass -player $p -class $class -value $time
+          arrClass-UpdatePlayer             -table $refClass   -player $p -class $class -value $time
           arrSummaryTable-SetPlayerProperty -table $refSummary -player $p -property 'TimePlayed' -value ([int]$time)
         }
       }
