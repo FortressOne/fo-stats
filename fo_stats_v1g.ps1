@@ -1,7 +1,7 @@
 ###
 # 14/11/2021 22:30
-# PS  COMMAND LINE:- & .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly]
-# WIN COMMAND LINE:- powershell -Command "& .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly]"
+# PS  COMMAND LINE:- & .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly] [-OpenHTML]
+# WIN COMMAND LINE:- powershell -Command "& .\FO_stats_v1g.ps1 -StatFile 'x:\path\filename.json' [-RountTime <seconds>] [-TextOnly] [-OpenHTML]"
 #
 # NOTE: StatFile parameter now accepts *.json wildcard to generate many HTMLs, the Text stats are ALL STATS COMBINED.
 #
@@ -10,10 +10,11 @@
 ###
 
 param (
-  [Parameter(Mandatory=$true)]
+  [Parameter(Mandatory=$true)] 
   [string]$StatFile,
   [int]$RoundTime,
-  [switch]$TextOnly
+  [switch]$TextOnly,
+  [switch]$OpenHTML
 )
 
 $regExReplaceFix = '[[+*?()\\.]','\$&'
@@ -27,10 +28,10 @@ $ccRed    = '#FF8080'
 $ccPink   = '#FA4CFF'
 
                # 0        1     2     3      4      5    6      7     8     9       10
-$ClassToStr = @('World','Sco','Snp','Sold','Demo','Med','HwG','Pyro','Spy','Eng', 'SG')
-$ClassAllowed       = @(1,3,4,5,6,7,8,9)
-$ClassAllowedwithSG = @(1,3,4,5,6,7,8,9,10)
-$TeamToColor  = @('Civ','Blue','Red','Yellow','Green')
+$script:ClassToStr = @('World','Sco','Snp','Sold','Demo','Med','HwG','Pyro','Spy','Eng', 'SG')
+$script:ClassAllowed       = @(1,3,4,5,6,7,8,9)
+$script:ClassAllowedwithSG = @(1,3,4,5,6,7,8,9,10)
+$script:TeamToColor  = @('Civ','Blue','Red','Yellow','Green')
 
 #array of team keys, playername
 function getPlayerClasses {
@@ -193,6 +194,9 @@ function arrSummaryTable-UpdatePlayer {
         FlagTake = 0
         FlagTime = 0
         FlagStop = 0
+        Win = 0
+        Draw = 0
+        Loss = 0
         TimePlayed = 0
       }
       $table.Value += $obj
@@ -210,7 +214,7 @@ function arrSummaryTable-SetPlayerProperty {
 
   process {    
     $playerpos = (arrFindPlayer $table $player)
-    if ($playerpos -gt -1) { ($table.Value)[$playerpos].$property += $value }
+    if ($playerpos -gt -1 -and $value -gt 0) { ($table.Value)[$playerpos].$property += $value }
   }
 }
 
@@ -241,10 +245,98 @@ function arrClass-UpdatePlayer {
       $table.Value += $obj
     }
 
-    ($table.Value)[$playerpos].$class += $value
+    if ($playerpos -gt -1 -and $value -gt 0) { ($table.Value)[$playerpos].$class += $value }
   }
 }
 #end Summary table functions
+
+function GenerateFragHtmlTable {
+  param([string]$Name)
+
+  $count = 1
+  $tableHeader = "<table style=""width:600px;display:inline-table"">$($tableStyle2)<tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Kills</th><th $($columStyle)>Dth</th><th $($columStyle)>TK</h>"
+  $table = ''
+  $subtotal = @($playerList | foreach { 0 } )
+
+  foreach ($p in $playerList) {
+    $tableHeader += "<th $($columStyle)>$($count)</th>"
+    $table +=  "<tr bgcolor=`"$(teamColorCode (Get-Variable -Name "arrTeam$Name").Value.$p)`"><td>$($count)</td><td>$($p)</td><td>$((Get-Variable -Name "arrTeam$Name").Value.$p)</td><td>$((Get-Variable -Name "arrFragTotal$Name").Value.$p)</td><td>$((Get-Variable -Name "arrDeath$Name").Value.$p)</td><td>$((Get-Variable -Name "arrTKill$Name").Value.$p)</td>"
+
+    $count2 = 0
+    foreach ($o in $playerList) {
+      $key = "$($p)_$($o)"
+      $kills = (Get-Variable -Name "arrFragVersus$Name").Value.$key
+      if ($kills -eq '' -or $kills -lt 1) { $kills = 0 }
+
+      $table += "<td bgcolor=`"$(actionColorCode (Get-Variable -Name "arrTeam$Name").Value $p $o)`">$($kills)</td>"
+
+      $subtotal[$count2] = $kills + $subtotal[$count2]
+      $count2 +=1
+    }
+
+    $table += "<td>$(getPlayerClasses (Get-Variable -Name "arrTimeClass$Name").Value.Keys $p)</td>"
+    $table += "</tr>`n"
+    
+    $count += 1 
+  }
+
+  $tableHeader += "<th>Classes</th></tr>`n"
+  $tableHeader += "</tr>`n"
+
+  $table += '<tr><td colspan=6 align=right padding=2px><b>Total:</b></td>'
+  foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
+
+  $ret = $tableHeader      
+  $ret += $table            
+  $ret += "</table>`n"
+
+  return $ret
+}
+
+
+function GenerateDmgHtmlTable {
+  param([string]$Name)
+
+  $count = 1
+  $tableHeader = "<table style=""width:700px;display:inline-table""><tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Dmg</th>"
+  $table = ''
+  $subtotal = @($playerList | foreach { 0 } )
+
+  foreach ($p in $playerList) {
+    $tableHeader += "<th $($columStyle)>$($count)</th>"
+    $table +=  "<tr bgcolor=`"$(teamColorCode (Get-Variable -Name "arrTeam$Name").Value.$p)`"><td>$($count)</td><td>$($p)</td><td>$((Get-Variable -Name "arrTeam$Name").Value.$p)</td><td>$((Get-Variable -Name "arrDmgTotal$Name").Value.$p)</td>"
+
+    $count2 = 0
+    foreach ($o in $playerList) {
+      $key = "$($p)_$($o)"
+      $dmg = (Get-Variable -Name "arrDmgVersus$Name").Value.$key
+      if ($dmg -eq '' -or $dmg -lt 1) { $dmg = 0 }
+
+      $table += "<td bgcolor=`"$(actionColorCode (Get-Variable -Name "arrTeam$Name").Value $p $o)`">$($dmg)</td>"
+
+      #don't count self dmg
+      if ($p -ne $o) { $subtotal[$count2] = $dmg + $subtotal[$count2] }
+      $count2 +=1
+    }
+
+    $table += "<td>$(getPlayerClasses (Get-Variable -Name "arrTimeClass$Name").Value.Keys $p)</td>"
+    $table += "</tr>`n"
+    
+    $count += 1 
+  }
+
+  $tableHeader += "<th>Classes</th></tr>`n"
+  $tableHeader += "</tr>`n"
+
+  $table += '<tr><td colspan=4 align=right padding=2px><b>Total:</b><i> *minus self-dmg</i></td>'
+  foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
+
+  $ret += $tableHeader   
+  $ret += $table         
+  $ret += "</table>`n"
+  return $ret  
+}
+
 
 
 # Process input file, make sure it is valid.
@@ -277,11 +369,11 @@ foreach ($jsonFile in $inputFile) {
   $outFileStr = ($jsonFile.FullName -replace '\.json$','.html'  -replace '`?(\[|\])','')
   $json = ((Get-Content -Path ($jsonFile.FullName  -replace '\[','`[' -replace '\]','`]') -Raw) | ConvertFrom-Json)
   $jsonFileCount++
-  Write-Host "Input File:$(if ($inputFile.Length -gt 1) { " ($jsonFileCount/$($inputFile.Length))" } ): $($jsonFile.Name)"
+  Write-Host "Input File$(if ($inputFile.Length -gt 1) { " ($jsonFileCount/$($inputFile.Length))" } ): $($jsonFile.Name)"
 
   #Check for end round time (seconds) - default to 600secs (10mins)
   if ($RoundTime -is [int] -and $RoundTime -gt 0) { $round1EndTime = $RoundTime }
-  else { $round1EndTime = 600 }
+  else { $script:round1EndTime = 600 }
 
   $script:arrTeam = @{}
   $script:arrFragTotal     = @{}
@@ -360,13 +452,16 @@ foreach ($jsonFile in $inputFile) {
   $script:arrFlagThrowMin  = @{}
   $script:arrFlagStopMin = @{}
 
+  $script:arrWinLossDraw = @{}
+
   ###
   # Process the JSON into above arrays (created 'Script' to be readable by all functions)
   # keys: Frags/playername, Versus.player_enemy, Classes/player_class#, Weapons/player_weapon
   ###
   $script:round = 1
   $script:timeBlock = 1
-
+  $prevItem = ''
+  
   ForEach ($item in $json) {
     $type    = $item.type
     $kind    = $item.kind
@@ -441,6 +536,7 @@ foreach ($jsonFile in $inputFile) {
     #if (($class -eq '0' -and $player -eq 'world' -and $p_team -eq '0' -and $weap -eq 'worldspawn' -and $time -ge $round1EndTime) -and $round -le 1) {    #(($kind -eq 'enemy' -and ..)
     if ($time -gt $round1EndTime -and $round -lt 2) { 
       $round += 1
+      $prevItem = '-1'
       
       if ($arrTrackTime.flagPlayer -notin $null,'') {
         $arrTimeFlag."$($arrTrackTime.flagPlayer)" = $arrTrackTime.flagTook - $round1EndTime
@@ -651,7 +747,7 @@ foreach ($jsonFile in $inputFile) {
         $arrResult.winningTeam = $item.winningTeam
         $arrResult.time        = $time
 
-        
+
         switch ($arrResult.winningTeam) {
           '0'     { $arrResult.winRating = 0;                                                          $arrResult.winRatingDesc = 'Nobody wins' }
           '1'     { $arrResult.winRating = 1 - ($arrResult.team2Score / $arrResult.team1Score);        $arrResult.winRatingDesc = "Wins by $($item.team1Score - $item.team2Score) points" }
@@ -659,9 +755,8 @@ foreach ($jsonFile in $inputFile) {
         }
       }
     } #end type switch
-    $prevItem = $item
-  }#end for
-
+    if ($prevItem -ne '-1') { $prevItem = $item }
+  }#end for - finished parsing the JSON file
 
   #Close the arrTimeTrack flag + class stats a
   $arrTimeTrack.flagPlayer = ''
@@ -697,6 +792,14 @@ foreach ($jsonFile in $inputFile) {
   #Create Ordered Player List 
   #####
   $playerList  = ($arrTeam.GetEnumerator()| Sort-Object -Property Value,Name).Key
+
+  foreach ($p in $playerList) {
+    switch ($arrResult.winningTeam) {
+      '0'         { $arrWinLossDraw."$($p)_Draw" += 1 }
+      $arrTeam.$p { $arrWinLossDraw."$($p)_Win"  += 1 }
+      Default     { $arrWinLossDraw."$($p)_Loss" += 1 }
+    }
+  }
 
   if (!$TextOnly) {
     ###
@@ -1175,252 +1278,23 @@ foreach ($jsonFile in $inputFile) {
     $htmlOut += "<hr><h2>Awards</h2>`n"
     $htmlOut += $awardsHtml
 
-
-
     #Frag Total Table
     $htmlOut += "<hr><h2>TOTAL - Frags and Damage</h2>`n"  
+    $htmlOut += GenerateFragHtmlTable ''
+    $htmlOut += GenerateDmgHtmlTable ''   
+   
 
-    $count = 1
-    $tableHeader = "<table style=`"width:600px;display:inline-table`"><tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Kills</th><th $($columStyle)>Dth</th><th $($columStyle)>TK</h>"
-    $table = ''
-    $subtotal = @($playerList | foreach { 0 } )
-
-    foreach ($p in $playerList) {
-      $tableHeader += "<th $($columStyle)>$($count)</th>"
-
-      $table +=  "<tr bgcolor=`"$(teamColorCode $arrTeam.$p)`"><td>$($count)</td><td>$($p)</td><td>$($arrTeam.$p)</td><td>$($arrFragTotal.$p)</td><td>$($arrDeath.$p)</td><td>$($arrTKill.$p)</td>"
-      
-      $count2  = 0
-      foreach ($o in $playerList) {
-        $key = "$($p)_$($o)"
-        $kills = $arrFragVersus.$key
-        if ($kills -eq '' -or $kills -lt 1) { $kills = 0 }
-
-        $table += "<td bgcolor=`"$(actionColorCode $arrTeam $p $o)`">$($kills)</td>"
-        
-        $subtotal[$count2] = $kills + $subtotal[$count2]
-        $count2 += 1
-      }
-
-      $table += "<td>$(getPlayerClasses $arrTimeClass.Keys $p)</td>"
-      $table += "</tr>`n"
-      
-      $count += 1 
-    }
-
-    $tableHeader += "<th>Classes</th></tr>`n"
-    $tableHeader += "</tr>`n"
-
-    $table += '<tr><td colspan=6 align=right padding=2px><b>Total:</b></td>'
-    foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
-    $table += '</tr>'
-
-    $htmlOut += $tableHeader      
-    $htmlOut += $table            
-    $htmlOut += "</table>`n"        
-
-    #Damage Table - side by side with frags
-    #"<h2>Damage</h2>`n"  
-    $tableHeader = "<table style=""width:700px;display:inline-table""><tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Dmg</th>"
-
-    $count = 1
-    $table = ''
-    $subtotal = @($playerList | foreach { 0 } )
-
-    foreach ($p in $playerList) {
-      $tableHeader += "<th $($columStyle)>$($count)</th>"
-      $table +=  "<tr bgcolor=`"$(teamColorCode $arrTeam.$p)`"><td>$($count)</td><td>$($p)</td><td>$($arrTeam.$p)</td><td>$($arrDmgTotal.$p)</td>"
-
-      $count2 = 0
-      foreach ($o in $playerList) {
-        $key = "$($p)_$($o)"
-        $dmg = $arrDmgVersus.$key
-        if ($dmg -eq '' -or $dmg -lt 1) { $dmg = 0 }
-
-        $table += "<td bgcolor=`"$(actionColorCode $arrTeam $p $o)`">$($dmg)</td>"
-        
-        #don't count self dmg
-        if ($p -ne $o) { $subtotal[$count2] = $dmg + $subtotal[$count2] }
-        $count2 += 1
-      }
-
-      $table += "<td>$(getPlayerClasses $arrTimeClass.Keys $p)</td>"
-      $table += "</tr>`n"
-      
-      $count += 1 
-    }
-
-    $tableHeader += "<th>Classes</th></tr>`n"
-    $tableHeader += "</tr>`n"
-
-    $table += '<tr><td colspan=4 align=right padding=2px><b>Total:</b><i> *minus self-dmg</i></td>'
-    foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
-
-
-    $htmlOut += $tableHeader   
-    $htmlOut += $table         
-    $htmlOut += "</table>`n"      
-
-    #Frag Rnd1 v Rnd2  Table
     $htmlOut += "<hr><h2>Frags - Round 1 and Round 2</h2>`n"  
+    $htmlOut += GenerateFragHtmlTable "Rnd1"
+    $htmlOut += GenerateFragHtmlTable "Rnd2"
 
-    $count = 1
-    $tableHeader = "<table style=""width:600px;display:inline-table"">$($tableStyle2)<tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Kills</th><th $($columStyle)>Dth</th><th $($columStyle)>TK</h>"
-    $table = ''
-    $subtotal = @($playerList | foreach { 0 } )
-
-    foreach ($p in $playerList) {
-      $tableHeader += "<th $($columStyle)>$($count)</th>"
-      $table +=  "<tr bgcolor=`"$(teamColorCode $arrTeamRnd1.$p)`"><td>$($count)</td><td>$($p)</td><td>$($arrTeamRnd1.$p)</td><td>$($arrFragTotalRnd1.$p)</td><td>$($arrDeathRnd1.$p)</td><td>$($arrTKillRnd1.$p)</td>"
-
-      $count2 = 0
-      foreach ($o in $playerList) {
-        $key = "$($p)_$($o)"
-        $kills = $arrFragVersusRnd1.$key
-        if ($kills -eq '' -or $kills -lt 1) { $kills = 0 }
-
-        $table += "<td bgcolor=`"$(actionColorCode $arrTeamRnd1 $p $o)`">$($kills)</td>"
-
-        $subtotal[$count2] = $kills + $subtotal[$count2]
-        $count2 +=1
-      }
-
-      $table += "<td>$(getPlayerClasses $arrTimeClassRnd1.Keys $p)</td>"
-      $table += "</tr>`n"
-      
-      $count += 1 
-    }
-
-    $tableHeader += "<th>Classes</th></tr>`n"
-    $tableHeader += "</tr>`n"
-
-    $table += '<tr><td colspan=6 align=right padding=2px><b>Total:</b></td>'
-    foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
-
-    $htmlOut += $tableHeader      
-    $htmlOut += $table            
-    $htmlOut += "</table>`n"        
-
-    #Frag Rnd2  Table
-    #"<h2>Frags - Round 2</h2>`n"  
-
-    $count = 1
-    $tableHeader = "<table style=""width:600px;display:inline-table"">$($tableStyle2)<tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Kills</th><th $($columStyle)>Dth</th><th $($columStyle)>TK</h>"
-    $table = ''
-    $subtotal = @($playerList | foreach { 0 } )
-
-    foreach ($p in $playerList) {
-      $tableHeader += "<th $($columStyle)>$($count)</th>"
-      $table +=  "<tr bgcolor=`"$(teamColorCode $arrTeamRnd2.$p)`"><td>$($count)</td><td>$($p)</td><td>$($arrTeamRnd2.$p)</td><td>$($arrFragTotalRnd2.$p)</td><td>$($arrDeathRnd2.$p)</td><td>$($arrTKillRnd2.$p)</td>"
-      
-      $count2 = 0
-      foreach ($o in $playerList) {
-        $key = "$($p)_$($o)"
-        $kills = $arrFragVersusRnd2.$key
-        if ($kills -eq '' -or $kills -lt 1) { $kills = 0 }
-
-        $table += "<td bgcolor=`"$(actionColorCode $arrTeamRnd2 $p $o)`">$($kills)</td>"
-
-        $subtotal[$count2] = $kills + $subtotal[$count2]
-        $count2 +=1
-      }
-
-      $table += "<td>$(getPlayerClasses $arrTimeClassRnd2.Keys $p)</td>"
-      $table += "</tr>`n"
-      
-      $count += 1 
-    }
-
-    $tableHeader += "<th>Classes</th></tr>`n"
-    $tableHeader += "</tr>`n"
-
-    $table += '<tr><td colspan=6 align=right padding=2px><b>Total:</b></td>'
-    foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
-
-    $htmlOut += $tableHeader      
-    $htmlOut += $table            
-    $htmlOut += "</table>`n"        
-
+  
 
     #Damage by Round Table
     $htmlOut += "<hr><h2>Damage - Round 1 and Round 2</h2>`n"  
-
-    $count = 1
-    $tableHeader = "<table style=""width:700px;display:inline-table""><tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Dmg</th>"
-    $table = ''
-    $subtotal = @($playerList | foreach { 0 } )
-
-    foreach ($p in $playerList) {
-      $tableHeader += "<th $($columStyle)>$($count)</th>"
-      $table +=  "<tr bgcolor=`"$(teamColorCode $arrTeamRnd1.$p)`"><td>$($count)</td><td>$($p)</td><td>$($arrTeamRnd1.$p)</td><td>$($arrDmgTotalRnd1.$p)</td>"
-
-      $count2 = 0
-      foreach ($o in $playerList) {
-        $key = "$($p)_$($o)"
-        $dmg = $arrDmgVersusRnd1.$key
-        if ($dmg -eq '' -or $dmg -lt 1) { $dmg = 0 }
-
-        $table += "<td bgcolor=`"$(actionColorCode $arrTeamRnd1 $p $o)`">$($dmg)</td>"
-
-        #don't count self dmg
-        if ($p -ne $o) { $subtotal[$count2] = $dmg + $subtotal[$count2] }
-        $count2 +=1
-      }
-
-      $table += "<td>$(getPlayerClasses $arrTimeClassRnd1.Keys $p)</td>"
-      $table += "</tr>`n"
-      
-      $count += 1 
-    }
-
-    $tableHeader += "<th>Classes</th></tr>`n"
-    $tableHeader += "</tr>`n"
-
-    $table += '<tr><td colspan=4 align=right padding=2px><b>Total:</b><i> *minus self-dmg</i></td>'
-    foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
-
-    $htmlOut += $tableHeader   
-    $htmlOut += $table         
-    $htmlOut += "</table>`n"     
-
-    $count = 1
-    $tableHeader = "<table style=""width:700px;display:inline-table""><tr><th $($columStyle)>#</th><th $($columStyle)>Player</th><th $($columStyle)>Team</th><th $($columStyle)>Dmg</th>"
-    $table = ''
-    $subtotal = @($playerList | foreach { 0 } )
-
-
-    foreach ($p in $playerList) {
-      $tableHeader += "<th $($columStyle)>$($count)</th>"
-      $table +=  "<tr bgcolor=`"$(teamColorCode $arrTeamRnd2.$p)`"><td>$($count)</td><td>$($p)</td><td>$($arrTeamRnd2.$p)</td><td>$($arrDmgTotalRnd2.$p)</td>"
-
-      $count2 = 0
-      foreach ($o in $playerList) {
-        $key = "$($p)_$($o)"
-        $dmg = $arrDmgVersusRnd2.$key
-        if ($dmg -eq '' -or $dmg -lt 1) { $dmg = 0 }
-
-        $table += "<td bgcolor=`"$(actionColorCode $arrTeamRnd2 $p $o)`">$($dmg)</td>"
-
-        #don't count self dmg
-        if ($p -ne $o) { $subtotal[$count2] = $dmg + $subtotal[$count2] }
-        $count2 +=1
-      }
-
-      $table += "<td>$(getPlayerClasses $arrTimeClassRnd2.Keys $p)</td>"
-      $table += "</tr>`n"
-      
-      $count += 1 
-    }
-
-    $tableHeader += "<th>Classes</th></tr>`n"
-    $tableHeader += "</tr>`n"
-
-    $table += '<tr><td colspan=4 align=right padding=2px><b>Total:</b><i> *minus self-dmg</i></td>'
-    foreach ($st in $subtotal) { $table += "<td>$($st)</td>" }
-
-    $htmlOut += $tableHeader   
-    $htmlOut += $table         
-    $htmlOut += "</table>`n"     
+    $htmlOut += GenerateDmgHtmlTable 'Rnd1'
+    $htmlOut += GenerateDmgHtmlTable 'Rnd2'
+   
 
     ###
     # frag/death per mins
@@ -1892,6 +1766,7 @@ foreach ($jsonFile in $inputFile) {
     $htmlOut += "</body></html>"     
 
     $htmlOut | Out-File -FilePath $outFileStr
+    if ($OpenHTML) { & $outFileStr }
   }   #end html generation
 
   ## Object/Table Summaries
@@ -1945,6 +1820,13 @@ foreach ($jsonFile in $inputFile) {
       if ($kills -gt 0) { arrClass-UpdatePlayer -table ([ref]$arrClassFragTable) -player $p -class $class -value $kills }
     }
     
+    arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryAttTable) -player $p -property 'Win' -value ([int]$arrWinLossDraw."$($p)_Win")
+    arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryAttTable) -player $p -property 'Draw' -value ([int]$arrWinLossDraw."$($p)_Draw")
+    arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryAttTable) -player $p -property 'Loss' -value ([int]$arrWinLossDraw."$($p)_Loss")
+    arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryDefTable) -player $p -property 'Win' -value ([int]$arrWinLossDraw."$($p)_Win")
+    arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryDefTable) -player $p -property 'Draw' -value ([int]$arrWinLossDraw."$($p)_Draw")
+    arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryDefTable) -player $p -property 'Loss' -value ([int]$arrWinLossDraw."$($p)_Loss")
+
     arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryAttTable) -player $p -property 'FlagCap' -value ([int]$arrFlagCap.$p)
     arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryAttTable) -player $p -property 'FlagTake' -value ([int]$arrFlagTook.$p)
     arrSummaryTable-SetPlayerProperty -table ([ref]$arrSummaryAttTable) -player $p -property 'FlagTime' -value ([int]$arrTimeFlag.$p)
@@ -1985,7 +1867,7 @@ Write-Host "##############$(if ($jsonFileCount -gt 1) { "##############" })`n"
 Write-Host 'Attack Summary'
 $arrSummaryAttTable | FT Name,Kills,Death,TKill,Dmg,FlagCap,FlagTake,FlagTime,TimePlayed
 Write-Host 'Defence Summary'
-$arrSummaryDefTable | FT Name,Kills,Death,TKill,Dmg,FlagStop,TimePlayed
+$arrSummaryDefTable | FT Name,Kills,Death,TKill,Dmg,FlagStop,Win,Draw,Loss,TimePlayed
 Write-Host 'Class Kills Summary'
 $arrClassFragTable    | FT
 Write-Host 'Class Time Played - Attack'
