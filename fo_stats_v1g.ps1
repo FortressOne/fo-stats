@@ -728,12 +728,8 @@ foreach ($jsonFile in $inputFile) {
 
         # work out if death or throw
         if ($prevItem.type -eq 'death' -and $prevItem.player -eq $player -and $prevItem.time -eq $time -and $prevItem.kind -ne 'self') {
-          #debug
           $arrFlagStop.($prevItem.attacker) += 1
           $arrFlagStopMin."$($timeBlock)_$($prevItem.attacker)" += 1
-
-          $prevItem.attacker
-          $arrFlagStop.($prevItem.attacker)
         } elseif ($prevItem.kind -ne 'self') { $arrFlagThrow.$player  += 1; $arrFlagThrowMin.$keyTime += 1 }
       }
 
@@ -759,7 +755,7 @@ foreach ($jsonFile in $inputFile) {
         }
       }
     } #end type switch
-    
+
     if ($prevItem -ne '-1') { $prevItem = $item }
     else { $prevItem = '' }
   }#end for - finished parsing the JSON file
