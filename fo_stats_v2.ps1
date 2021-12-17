@@ -23,7 +23,7 @@ param (
 $inputFileStr = $StatFile -replace '(?<!`)[\[\]]','`$&'
 
 if ($inputFileStr -contains '*') { $inputFile = Get-ChildItem $inputFileStr }
-else { $inputFile = @(Get-Item $inputFileStr)  }
+elseif (Test-Path $inputFileStr) { $inputFile = @(Get-Item $inputFileStr)  }
 
 # If a folder search for all JSON files
 if ($inputFile.Count -eq 1 -and (Test-Path $inputFile -PathType Container)) {
